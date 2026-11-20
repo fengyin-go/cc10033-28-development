@@ -59,6 +59,15 @@ class BaseModuleService:
         rows.append(entry)
         return entry, []
 
+    def apply_action(
+        self,
+        entry_id: int,
+        action: str,
+        context: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any] | None, str]:
+        """带上下文的动作入口；默认忽略上下文，由需要批量数据的模块覆写。"""
+        return self.run_action(entry_id, action)
+
     def run_action(self, entry_id: int, action: str) -> tuple[dict[str, Any] | None, str]:
         entry = store.find(self.MODULE, entry_id)
         if entry is None:

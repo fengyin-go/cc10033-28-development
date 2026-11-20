@@ -6,12 +6,15 @@
 - 影响级别计算：根据关联类型和下游模型数量
 - 断链修复：自动尝试重建维度关联关系
 - 血缘图构建：基于维度-事实关联矩阵生成DAG
+- 消费 Vault 批次清单：把实际装载的 Hub/Link/Satellite 来源关系写入血缘，
+  卫星更正可回溯到具体源行和批次
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
 
+from app.services import vault_lineage
 from app.services.base import BaseModuleService
 from app.store import store
 
@@ -85,6 +88,12 @@ class ModelLineageService(BaseModuleService):
         if action == "分析影响":
             # 执行影响分析
             impact_analysis = _analyze_impact(entry)
+
+            # 消费所有未处理的 Vault 批次清单，把实际装载来源关系落到血缘
+            vault_result = vault_lineage.consume_vault_batches()
+            if vault_result["created_relations"]:
+                impact_analysis["vault_relations_created"] = vault_result["created_relations"]
+
             store.channel.publish("lineage.impact_analysis", {
                 "lineage_id": entry["关系ID"],
                 "upstream": entry["上游模型"],
@@ -136,6 +145,8 @@ class ModelLineageService(BaseModuleService):
         broken = sum(1 for row in store.rows(self.MODULE) if row.get("status") == "断链")
         base["broken_lineages"] = broken
         base["consumed_validations"] = len(store.channel.consume("validate.result", "model_lineage"))
+        # Vault 批次清单产生的实际装载来源关系
+        base["vault_lineage"] = vault_lineage.vault_lineage_snapshot()
         return base
 
 

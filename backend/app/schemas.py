@@ -29,3 +29,9 @@ class EntryPayload(BaseModel):
 class ActionPayload(BaseModel):
     action: str
     remark: str | None = None
+    # 批量类动作的输入（如 DataVault 执行加载时的源记录与批次号）。
+    context: dict[str, Any] = Field(default_factory=dict)
+    # 允许把批量输入直接放在动作请求顶层，减少调用方拼装成本。
+    records: list[dict[str, Any]] | None = None
+    source: str | None = None
+    batch_id: str | None = None

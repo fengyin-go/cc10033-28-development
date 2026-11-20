@@ -71,6 +71,46 @@ npm run dev
 | 模型校验 | `model_validate` | 校验规则 | 规则名称、目标模型、校验类型 |
 | 部署流水线 | `deploy_pipeline` | 部署任务 | 任务名称、目标模型、部署环境 |
 
+## DataVault 批次清单
+
+`data_vault` 的「执行加载」是批量装载入口：每次调用都会在 `vault_batch`
+落一个批次头、在 `vault_batch_row` 落逐行清单，记录源行标识、业务键、
+Hub/Link/Satellite 哈希键、输入判定和原始来源数据。
+
+- `app/services/vault_manifest.py`：逐行判定 `新增` / `重复提交` / `Satellite更正` /
+  `迟到更正` / `拒绝`。重复提交不新增 Hub、Link 或卫星版本；卫星属性真实变化时
+  保留旧值和新值，并按源时间区分迟到更正。
+- `app/services/vault_lineage.py`：消费批次清单，为已确认的 Hub/Link 建立实际装载
+  来源关系，为卫星更正记录来源源行和批次；重复提交与拒绝行不建关系。
+- `app/routers/vault.py`：`POST /api/data_vault/batches`（批量上报）、
+  `GET /api/data_vault/batches/{批次号}`（批次逐行明细）、
+  `POST /api/model_lineage/vault-relations/consume`（血缘消费）。
+
+批量装载有三种等价入口：
+
+```bash
+# 1) 专用装载接口：按模型名称或 entry_id 提交一批源记录
+curl -X POST http://127.0.0.1:8000/api/data_vault/batches \
+  -H 'Content-Type: application/json' \
+  -d '{"model_name":"CustomerHub","batch_id":"VB-001","records":[
+        {"源行标识":"R1","customer_id":"K1","customer_level":"普通"},
+        {"源行标识":"R2","customer_id":"K1","customer_level":"普通"},
+        {"源行标识":"R3","customer_id":"K1","customer_level":"黄金"}]}'
+
+# 2) 经典动作接口：records 可放在顶层或 context 里
+curl -X POST http://127.0.0.1:8000/api/data_vault/3/actions \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"执行加载","batch_id":"VB-002","records":[{"源行标识":"R1","customer_id":"K1"}]}'
+
+# 3) 回查批次与触发血缘消费
+curl http://127.0.0.1:8000/api/data_vault/batches/VB-001
+curl -X POST http://127.0.0.1:8000/api/model_lineage/vault-relations/consume
+```
+
+同一批里可以同时出现原行、完全重复行和改值行，清单会分别标成
+`新增`、`重复提交`、`Satellite更正`；与历史版本一致但源时间更早的行标成
+`迟到更正` 并保留为历史版本。
+
 ## 约定
 
 - 全部模块共享`frontend/src/views/WorkbenchView.vue|tsx`和一套资源路由。
